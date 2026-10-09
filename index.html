@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cosmic Combine - Physics Puzzle Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+        body {
+            font-family: 'Rajdhani', sans-serif;
+            background-color: #030712;
+            color: #f3f4f6;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            width: 100vw;
+        }
+        .font-orbitron { font-family: 'Orbitron', sans-serif; }
+        .glow-text { text-shadow: 0 0 10px rgba(59, 130, 246, 0.7), 0 0 20px rgba(147, 51, 234, 0.5); }
+        .glow-box { box-shadow: 0 0 15px rgba(59, 130, 246, 0.3), inset 0 0 15px rgba(147, 51, 234, 0.2); }
+        canvas { display: block; }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-between h-screen w-screen bg-slate-950 text-white relative select-none">
+
+    <canvas id="starfield" class="absolute inset-0 z-0 pointer-events-none"></canvas>
+
+    <header class="relative z-10 w-full max-w-lg px-4 pt-3 pb-1 flex justify-between items-center bg-slate-900/60 backdrop-blur-md border-b border-slate-800 rounded-b-2xl shadow-lg">
+        <div>
+            <h1 class="text-xl sm:text-2xl font-black font-orbitron tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 glow-text">
+                COSMIC COMBINE
+            </h1>
+            <div class="text-xs text-slate-400 font-mono tracking-widest flex items-center gap-2">
+                <span>COMBO: <span id="combo-display" class="text-amber-400 font-bold">x1</span></span>
+            </div>
+        </div>
+        
+        <div class="flex items-center gap-4">
+            <div class="text-right">
+                <div class="text-xs text-slate-400 tracking-wider">SCORE</div>
+                <div id="score" class="text-xl sm:text-2xl font-bold font-orbitron text-cyan-400">0</div>
+            </div>
+            <button id="sound-btn" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-400 transition-all duration-200">
+                <svg id="sound-icon-on" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path></svg>
+                <svg id="sound-icon-off" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>
+            </button>
+        </div>
+    </header>
+
+    <main class="relative z-10 flex-1 w-full max-w-lg flex flex-col items-center justify-center p-2">
+        <!-- Next Planet Box -->
+        <div class="w-full flex justify-between items-center px-4 mb-2">
+            <div class="flex items-center gap-2">
+                <span class="text-xs font-semibold text-slate-400 tracking-wider">NEXT:</span>
+                <div id="next-preview" class="w-10 h-10 rounded-full bg-slate-900/80 border border-slate-700 flex items-center justify-center glow-box">
+                    <canvas id="next-canvas" width="36" height="36"></canvas>
+                </div>
+            </div>
+            <div class="text-xs text-slate-400 flex items-center gap-1">
+                <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                DANGER LINE NEAR TOP
+            </div>
+        </div>
+
+        <!-- Main Game Area Container -->
+        <div id="game-container" class="relative w-full aspect-[3/4] max-h-[70vh] bg-slate-900/40 border-2 border-slate-800/80 rounded-2xl shadow-2xl backdrop-blur-sm overflow-hidden glow-box">
+            <!-- Danger Boundary Line -->
+            <div class="absolute top-[12%] left-0 w-full border-b-2 border-dashed border-red-500/50 pointer-events-none z-20"></div>
+            <!-- Physics Canvas Wrapper -->
+            <canvas id="game-canvas" class="w-full h-full cursor-crosshair relative z-10"></canvas>
+        </div>
+    </main>
+
+    <div id="game-over-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-lg hidden transition-all duration-300">
+        <div class="bg-slate-900 border border-slate-800 p-8 rounded-3xl text-center max-w-sm w-11/12 shadow-2xl glow-box">
+            <h2 class="text-3xl font-black font-orbitron text-red-500 mb-2 tracking-wider glow-text">SUPERNOVA!</h2>
+            <p class="text-slate-400 text-sm mb-6">Celestial overflow detected!</p>
+            
+            <div class="bg-slate-950/60 rounded-xl p-4 mb-6 border border-slate-800/60">
+                <div class="text-xs text-slate-500 tracking-wider mb-1">FINAL SCORE</div>
+                <div id="final-score" class="text-4xl font-extrabold font-orbitron text-cyan-400">0</div>
+            </div>
+
+            <button id="restart-btn" class="w-full py-4 bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-white font-bold font-orbitron rounded-xl shadow-lg transition-all transform active:scale-95 glow-box">
+                PLAY AGAIN
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const CELESTIAL_TIERS = [
+            { name: "Asteroid", radius: 12, score: 10, color: "#94a3b8", halo: "#cbd5e1" },
+            { name: "Moon", radius: 18, score: 20, color: "#38bdf8", halo: "#0284c7" },
+            { name: "Mercury", radius: 26, score: 40, color: "#818cf8", halo: "#4f46e5" },
+            { name: "Mars", radius: 34, score: 80, color: "#f87171", halo: "#dc2626" },
+            { name: "Venus", radius: 44, score: 160, color: "#fbbf24", halo: "#d97706" },
+            { name: "Earth", radius: 54, score: 320, color: "#34d399", halo: "#059669" },
+            { name: "Neptune", radius: 66, score: 640, color: "#60a5fa", halo: "#2563eb" },
+            { name: "Jupiter", radius: 80, score: 1280, color: "#f97316", halo: "#ea580c" },
+            { name: "Sun", radius: 96, score: 2560, color: "#facc15", halo: "#ca8a04" },
+            { name: "Neutron Star", radius: 114, score: 5120, color: "#e879f9", halo: "#c026d3" },
+            { name: "Black Hole", radius: 135, score: 10240, color: "#000000", halo: "#a855f7" }
+        ];
+
+        class AudioSynthesizer {
+            constructor() {
+                this.ctx = null;
+                this.enabled = true;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioContext();
+                }
+            }
+
+            playDropSound() {
+                if (!this.enabled || !this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(300, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(80, this.ctx.currentTime + 0.15);
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.15);
+            }
+
+            playMergeSound(tier) {
+                if (!this.enabled || !this.ctx) return;
+                const baseFreq = 220 * Math.pow(1.08, tier);
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(baseFreq, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.5, this.ctx.currentTime + 0.25);
+                gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.25);
+            }
+
+            playGameOverSound() {
+                if (!this.enabled || !this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.8);
+                gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.8);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.8);
+            }
+        }
+
+        const synth = new AudioSynthesizer();
+
+        window.onload = function() {
+            // Setup Background Starfield
+            const bgCanvas = document.getElementById('starfield');
+            const bgCtx = bgCanvas.getContext('2d');
+            let stars = [];
+
+            function resizeBg() {
+                bgCanvas.width = window.innerWidth;
+                bgCanvas.height = window.innerHeight;
+                stars = [];
+                for(let i=0; i<120; i++) {
+                    stars.push({
+                        x: Math.random() * bgCanvas.width,
+                        y: Math.random() * bgCanvas.height,
+                        radius: Math.random() * 1.5,
+                        alpha: Math.random(),
+                        speed: 0.005 + Math.random() * 0.01
+                    });
+                }
+            }
+            resizeBg();
+            window.addEventListener('resize', resizeBg);
+
+            function renderBg() {
+                bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
+                bgCtx.fillStyle = "#ffffff";
+                stars.forEach(star => {
+                    star.alpha += star.speed;
+                    if(star.alpha > 1 || star.alpha < 0) star.speed = -star.speed;
+                    bgCtx.globalAlpha = Math.abs(star.alpha);
+                    bgCtx.beginPath();
+                    bgCtx.arc(star.x, star.y, star.radius, 0, Math.PI*2);
+                    bgCtx.fill();
+                });
+                requestAnimationFrame(renderBg);
+            }
+            renderBg();
+
+            // Setup Matter.js Physics Engine
+            const { Engine, Render, Runner, Bodies, Composite, Constraint, Events, Body, Vector } = Matter;
+
+            const container = document.getElementById('game-container');
+            const canvas = document.getElementById('game-canvas');
+
+            let width = container.clientWidth;
+            let height = container.clientHeight;
+
+            const engine = Engine.create({ gravity: { x: 0, y: 1.2 } });
+            
+            // Custom Renderer on Canvas
+            const ctx = canvas.getContext('2d');
+            canvas.width = width;
+            canvas.height = height;
+
+            // Boundaries
+            const wallOptions = { isStatic: true, friction: 0.3, restitution: 0.2 };
+            let ground = Bodies.rectangle(width / 2, height + 30, width, 60, wallOptions);
+            let leftWall = Bodies.rectangle(-30, height / 2, 60, height * 2, wallOptions);
+            let rightWall = Bodies.rectangle(width + 30, height / 2, 60, height * 2, wallOptions);
+            Composite.add(engine.world, [ground, leftWall, rightWall]);
+
+            // Game State
+            let currentScore = 0;
+            let comboCount = 1;
+            let comboTimer = null;
+            let isGameOver = false;
+            let canDrop = true;
+            let dropX = width / 2;
+            let currentTier = getRandomTierIndex();
+            let nextTier = getRandomTierIndex();
+            let particles = [];
+            let dangerTimer = 0;
+
+            function getRandomTierIndex() {
+                return Math.floor(Math.random() * 4); // Spawns Asteroid, Moon, Mercury, or Mars
+            }
+
+            const nextCanvas = document.getElementById('next-canvas');
+            const nextCtx = nextCanvas.getContext('2d');
+
+            function drawNextPreview() {
+                nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
+                const tier = CELESTIAL_TIERS[nextTier];
+                const cx = nextCanvas.width / 2;
+                const cy = nextCanvas.height / 2;
+                const radius = Math.min(tier.radius * 0.4, 15);
+
+                nextCtx.shadowColor = tier.halo;
+                nextCtx.shadowBlur = 8;
+                nextCtx.fillStyle = tier.color;
+                nextCtx.beginPath();
+                nextCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+                nextCtx.fill();
+            }
+            drawNextPreview();
+
+            function updateDropPosition(e) {
+                if (isGameOver) return;
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const radius = CELESTIAL_TIERS[currentTier].radius;
+                dropX = Math.max(radius + 5, Math.min(width - radius - 5, clientX - rect.left));
+            }
+
+            function handleDrop() {
+                if (!canDrop || isGameOver) return;
+                synth.init();
+                canDrop = false;
+
+                const tier = CELESTIAL_TIERS[currentTier];
+                const body = Bodies.circle(dropX, 40, tier.radius, {
+                    restitution: 0.3,
+                    friction: 0.1,
+                    density: 0.001 * (currentTier + 1),
+                    label: `celestial_${currentTier}`
+                });
+                body.tierIndex = currentTier;
+
+                Composite.add(engine.world, body);
+                synth.playDropSound();
+
+                // Cycle Next Celestial Tier
+                currentTier = nextTier;
+                nextTier = getRandomTierIndex();
+                drawNextPreview();
+
+                setTimeout(() => { canDrop = true; }, 500);
+            }
+
+            canvas.addEventListener('mousemove', updateDropPosition);
+            canvas.addEventListener('touchmove', (e) => { updateDropPosition(e); e.preventDefault(); }, { passive: false });
+            canvas.addEventListener('click', handleDrop);
+            canvas.addEventListener('touchend', handleDrop);
+
+            Events.on(engine, 'collisionStart', (event) => {
+                const pairs = event.pairs;
+                pairs.forEach(pair => {
+                    const { bodyA, bodyB } = pair;
+                    if (bodyA.tierIndex !== undefined && bodyB.tierIndex !== undefined) {
+                        if (bodyA.tierIndex === bodyB.tierIndex && !bodyA.isMerging && !bodyB.isMerging) {
+                            const tier = bodyA.tierIndex;
+                            if (tier < CELESTIAL_TIERS.length - 1) {
+                                bodyA.isMerging = true;
+                                bodyB.isMerging = true;
+
+                                const midX = (bodyA.position.x + bodyB.position.x) / 2;
+                                const midY = (bodyA.position.y + bodyB.position.y) / 2;
+
+                                Composite.remove(engine.world, [bodyA, bodyB]);
+
+                                const nextTierIndex = tier + 1;
+                                const newBody = Bodies.circle(midX, midY, CELESTIAL_TIERS[nextTierIndex].radius, {
+                                    restitution: 0.3,
+                                    friction: 0.1,
+                                    density: 0.001 * (nextTierIndex + 1),
+                                    label: `celestial_${nextTierIndex}`
+                                });
+                                newBody.tierIndex = nextTierIndex;
+
+                                Composite.add(engine.world, newBody);
+
+                                // Add Score & Sound
+                                updateScore(CELESTIAL_TIERS[nextTierIndex].score * comboCount);
+                                incrementCombo();
+                                synth.playMergeSound(nextTierIndex);
+
+                                // Create Visual Burst Effect
+                                createBurstParticles(midX, midY, CELESTIAL_TIERS[nextTierIndex].color);
+                            }
+                        }
+                    }
+                });
+            });
+
+            function incrementCombo() {
+                comboCount++;
+                document.getElementById('combo-display').innerText = `x${comboCount}`;
+                clearTimeout(comboTimer);
+                comboTimer = setTimeout(() => {
+                    comboCount = 1;
+                    document.getElementById('combo-display').innerText = `x1`;
+                }, 2000);
+            }
+
+            function updateScore(points) {
+                currentScore += points;
+                document.getElementById('score').innerText = currentScore;
+            }
+
+            function createBurstParticles(x, y, color) {
+                for (let i = 0; i < 16; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = 2 + Math.random() * 4;
+                    particles.push({
+                        x: x, y: y,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed,
+                        radius: 2 + Math.random() * 3,
+                        color: color,
+                        alpha: 1,
+                        life: 1
+                    });
+                }
+            }
+
+            const runner = Runner.create();
+            Runner.run(runner, engine);
+
+            function drawGame() {
+                ctx.clearRect(0, 0, width, height);
+
+                // Render Aiming Projection Line & Celestial Preview
+                if (canDrop && !isGameOver) {
+                    const tier = CELESTIAL_TIERS[currentTier];
+                    ctx.save();
+                    // Projection Dotted Line
+                    ctx.setLineDash([6, 6]);
+                    ctx.strokeStyle = "rgba(56, 189, 248, 0.4)";
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(dropX, 40);
+                    ctx.lineTo(dropX, height - 30);
+                    ctx.stroke();
+                    ctx.restore();
+
+                    // Dropping Ghost Body
+                    ctx.save();
+                    ctx.shadowColor = tier.halo;
+                    ctx.shadowBlur = 10;
+                    ctx.fillStyle = tier.color;
+                    ctx.globalAlpha = 0.8;
+                    ctx.beginPath();
+                    ctx.arc(dropX, 40, tier.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+
+                // Render Bodies
+                const bodies = Composite.allBodies(engine.world);
+                let overflowDetected = false;
+
+                bodies.forEach(body => {
+                    if (body.tierIndex !== undefined) {
+                        const tier = CELESTIAL_TIERS[body.tierIndex];
+                        ctx.save();
+                        ctx.translate(body.position.x, body.position.y);
+                        ctx.rotate(body.angle);
+
+                        // Glow Effect
+                        ctx.shadowColor = tier.halo;
+                        ctx.shadowBlur = body.tierIndex > 5 ? 20 : 10;
+
+                        // Planet Color
+                        ctx.fillStyle = tier.color;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, tier.radius, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        // Special Accent Rings for Higher Tiers
+                        if (body.tierIndex >= 7) {
+                            ctx.strokeStyle = "rgba(255,255,255,0.4)";
+                            ctx.lineWidth = 3;
+                            ctx.beginPath();
+                            ctx.arc(0, 0, tier.radius * 0.6, 0, Math.PI * 2);
+                            ctx.stroke();
+                        }
+                        ctx.restore();
+
+                        // Check Danger Height Boundary Limit
+                        if (body.position.y < height * 0.12 && Math.abs(body.velocity.y) < 0.2) {
+                            overflowDetected = true;
+                        }
+                    }
+                });
+
+                // Danger Boundary Check Logic
+                if (overflowDetected) {
+                    dangerTimer += 1;
+                    if (dangerTimer > 120) { // Over boundary for ~2 seconds
+                        triggerGameOver();
+                    }
+                } else {
+                    dangerTimer = Math.max(0, dangerTimer - 1);
+                }
+
+                // Render Particles
+                particles.forEach((p, idx) => {
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.alpha -= 0.025;
+                    ctx.save();
+                    ctx.globalAlpha = Math.max(0, p.alpha);
+                    ctx.fillStyle = p.color;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+
+                    if (p.alpha <= 0) particles.splice(idx, 1);
+                });
+
+                requestAnimationFrame(drawGame);
+            }
+
+            drawGame();
+
+            function triggerGameOver() {
+                if (isGameOver) return;
+                isGameOver = true;
+                synth.playGameOverSound();
+                document.getElementById('final-score').innerText = currentScore;
+                document.getElementById('game-over-modal').classList.remove('hidden');
+            }
+
+            // Restart Button Action
+            document.getElementById('restart-btn').addEventListener('click', () => {
+                const bodies = Composite.allBodies(engine.world);
+                bodies.forEach(body => {
+                    if (body.tierIndex !== undefined) Composite.remove(engine.world, body);
+                });
+                currentScore = 0;
+                comboCount = 1;
+                dangerTimer = 0;
+                isGameOver = false;
+                document.getElementById('score').innerText = 0;
+                document.getElementById('game-over-modal').classList.add('hidden');
+            });
+
+            // Toggle Sound Button Action
+            const soundBtn = document.getElementById('sound-btn');
+            const soundIconOn = document.getElementById('sound-icon-on');
+            const soundIconOff = document.getElementById('sound-icon-off');
+
+            soundBtn.addEventListener('click', () => {
+                synth.init();
+                synth.enabled = !synth.enabled;
+                soundIconOn.classList.toggle('hidden', !synth.enabled);
+                soundIconOff.classList.toggle('hidden', synth.enabled);
+            });
+        };
+    </script>
+</body>
+</html>
